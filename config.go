@@ -17,6 +17,7 @@ import (
 type Config struct {
 	LogPath  string           `yaml:"log-path"`
 	DataRoot string           `yaml:"data-root"`
+	Debug    bool             `yaml:"debug"`
 	Accounts []*AccountConfig `yaml:"accounts"`
 }
 
