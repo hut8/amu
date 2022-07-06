@@ -46,6 +46,7 @@ func (e *Engine) RunAccount(ac *AccountConfig) {
 	c, err := client.DialTLS(e.config.Accounts[0].IMAPServer, nil)
 	if err != nil {
 		l.Error().Err(err).Msg("failed to connect")
+		return
 	}
 	e.imapClient = c
 	if err := c.Login(ac.Username, ac.Password); err != nil {

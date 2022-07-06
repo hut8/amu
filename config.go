@@ -58,6 +58,7 @@ func LoadConfig() (*Config, error) {
 	if err := yaml.Unmarshal(configYAML, config); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal yaml")
 	}
+	config.ApplyDefaults()
 	return config, nil
 }
 
@@ -71,17 +72,17 @@ func ConfigureLog(conf *Config) {
 		if err != nil {
 			panic(err)
 		}
-
 	}
 
-	// FIXME
-	if false {
-		log.Logger = log.Output(logFile)
-	} else {
-		consoleOut := zerolog.ConsoleWriter{Out: os.Stderr}
-		logOut := zerolog.MultiLevelWriter(consoleOut, logFile)
-		log.Logger = log.Output(logOut)
-	}
+	// if false {
+	// 	log.Logger = log.Output(logFile)
+	// } else {
+	// 	consoleOut := zerolog.ConsoleWriter{Out: os.Stderr}
+	// 	logOut := zerolog.MultiLevelWriter(consoleOut, logFile)
+	// 	log.Logger = log.Output(logOut)
+	// }
+
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	log.Logger = log.With().Caller().Logger()
 	// display the file and line number, not the whole path to the file
 	zerolog.CallerMarshalFunc = func(file string, line int) string {
