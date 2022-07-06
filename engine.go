@@ -6,6 +6,7 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/hut8/amu/ent"
 	"github.com/rs/zerolog"
 )
 
@@ -13,16 +14,19 @@ type Engine struct {
 	ctx        context.Context
 	config     *Config
 	imapClient *client.Client
+	db         *ent.Client
 	log        zerolog.Logger
 }
 
 func NewEngine(
 	ctx context.Context,
 	config *Config,
+	db *ent.Client,
 	log zerolog.Logger) *Engine {
 	return &Engine{
 		ctx:    ctx,
 		config: config,
+		db:     db,
 		log:    log,
 	}
 }

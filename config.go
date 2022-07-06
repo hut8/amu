@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -19,25 +20,46 @@ type Config struct {
 	Accounts []*AccountConfig `yaml:"accounts"`
 }
 
-func (ac *Config) ApplyDefaults() {
-	for _, ac := range ac.Accounts {
+func (c *Config) Write(path string) {
+	sink, err := os.Create(path)
+	if err != nil {
+		log.Error().Err(err).Msg("could not open config to write")
+		return
+	}
+	defer sink.Close()
+
+	encoder := yaml.NewEncoder(sink)
+	if err := encoder.Encode(c); err != nil {
+		log.Error().Err(err).Msg("could not write config")
+	}
+}
+
+func (c *Config) ApplyDefaults() {
+	for _, ac := range c.Accounts {
 		ac.ApplyDefaults()
 	}
 }
 
 type AccountConfig struct {
-	Name       string `yaml:"name"`
-	Username   string `yaml:"username"`
-	Password   string `yaml:"password"`
-	Server     string `yaml:"server"`
-	SMTPServer string `yaml:"smtp-server"`
-	IMAPServer string `yaml:"imap-server"`
+	Name       string    `yaml:"name"`
+	UUID       uuid.UUID `yaml:"id"`
+	Username   string    `yaml:"username"`
+	Password   string    `yaml:"password"`
+	Server     string    `yaml:"server"`
+	SMTPServer string    `yaml:"smtp-server"`
+	IMAPServer string    `yaml:"imap-server"`
 }
 
 func (ac *AccountConfig) ApplyDefaults() {
 	if ac.Server == "gmail" {
 		ac.SMTPServer = "smtp.gmail.com:587"
 		ac.IMAPServer = "imap.gmail.com:993"
+	}
+
+	// Each account must have a UUID to track messages, etc
+	// in case the user changes "name"
+	if ac.UUID == uuid.Nil {
+		ac.UUID = uuid.New()
 	}
 }
 
@@ -59,6 +81,8 @@ func LoadConfig() (*Config, error) {
 		return nil, errors.Wrap(err, "failed to unmarshal yaml")
 	}
 	config.ApplyDefaults()
+	// write back out
+	config.Write(configPath())
 	return config, nil
 }
 
@@ -74,9 +98,9 @@ func ConfigureLog(conf *Config) {
 		}
 	}
 
-	// if false {
-	// 	log.Logger = log.Output(logFile)
-	// } else {
+	if false {
+		log.Logger = log.Output(logFile)
+	} // else {
 	// 	consoleOut := zerolog.ConsoleWriter{Out: os.Stderr}
 	// 	logOut := zerolog.MultiLevelWriter(consoleOut, logFile)
 	// 	log.Logger = log.Output(logOut)
