@@ -1,0 +1,6 @@
+data-root: ~/amu-storage
+accounts:
+  - name: Gmail
+    username: liambowen@gmail.com
+    password: Use an app-specific password
+    server: gmail
