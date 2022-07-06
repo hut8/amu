@@ -16,8 +16,7 @@ func main() {
 		os.Exit(1)
 	}
 	ConfigureLog(config)
-	engine := NewEngine(ctx,
-		config,
-		log.With("component", "engine"))
+	engineLog := log.With().Str("component", "engine").Logger()
+	engine := NewEngine(ctx, config, engineLog)
 	engine.Run()
 }

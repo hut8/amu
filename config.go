@@ -50,9 +50,9 @@ func configPath() string {
 func LoadConfig() (*Config, error) {
 	configYAML, err := ioutil.ReadFile(configPath())
 	if err != nil {
-		return errors.Wrapf(err,
-			"failed to read config file at %v", configPath)
-		return nil, err
+		return nil, errors.Wrapf(err,
+			"failed to read config file at %v",
+			configPath)
 	}
 	config := &Config{}
 	if err := yaml.Unmarshal(configYAML, config); err != nil {

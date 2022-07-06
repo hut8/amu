@@ -61,7 +61,7 @@ func (e *Engine) RunAccount(ac *AccountConfig) {
 		done <- c.List("", "*", mailboxes)
 	}()
 
-	l.Println("Mailboxes:")
+	l.Debug().Msg("Mailboxes:")
 	for m := range mailboxes {
 		l.Debug().Msgf("* %v", m.Name)
 	}
