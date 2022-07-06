@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
@@ -31,7 +35,23 @@ func NewEngine(
 	}
 }
 
+func (e *Engine) applyConfig() {
+	if e.config.Debug {
+		basename := fmt.Sprintf("network-debug-%v.log",
+			time.Now().UnixNano())
+		sinkpath := filepath.Join(e.config.DataRoot, basename)
+		sink, err := os.Create(sinkpath)
+		if err != nil {
+			panic(err)
+		}
+		e.imapClient.SetDebug(sink)
+		e.log.Info().Str("path", sinkpath).
+			Msg("imap debug will be written")
+	}
+}
+
 func (e *Engine) Run() {
+	e.applyConfig()
 	wg := sync.WaitGroup{}
 	for _, ac := range e.config.Accounts {
 		e.log.Info().Str("account", ac.Name).
