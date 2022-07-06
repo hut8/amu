@@ -8,21 +8,69 @@ import (
 )
 
 var (
+	// AccountsColumns holds the columns for the "accounts" table.
+	AccountsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "uuid", Type: field.TypeUUID},
+	}
+	// AccountsTable holds the schema information for the "accounts" table.
+	AccountsTable = &schema.Table{
+		Name:       "accounts",
+		Columns:    AccountsColumns,
+		PrimaryKey: []*schema.Column{AccountsColumns[0]},
+	}
+	// MailboxesColumns holds the columns for the "mailboxes" table.
+	MailboxesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "account_mailboxes", Type: field.TypeInt},
+	}
+	// MailboxesTable holds the schema information for the "mailboxes" table.
+	MailboxesTable = &schema.Table{
+		Name:       "mailboxes",
+		Columns:    MailboxesColumns,
+		PrimaryKey: []*schema.Column{MailboxesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "mailboxes_accounts_mailboxes",
+				Columns:    []*schema.Column{MailboxesColumns[2]},
+				RefColumns: []*schema.Column{AccountsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+	}
 	// MessagesColumns holds the columns for the "messages" table.
 	MessagesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "message_id", Type: field.TypeString},
+		{Name: "imap_uid", Type: field.TypeUint32, Nullable: true},
+		{Name: "header", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "body", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "mailbox_messages", Type: field.TypeInt},
 	}
 	// MessagesTable holds the schema information for the "messages" table.
 	MessagesTable = &schema.Table{
 		Name:       "messages",
 		Columns:    MessagesColumns,
 		PrimaryKey: []*schema.Column{MessagesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "messages_mailboxes_messages",
+				Columns:    []*schema.Column{MessagesColumns[5]},
+				RefColumns: []*schema.Column{MailboxesColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AccountsTable,
+		MailboxesTable,
 		MessagesTable,
 	}
 )
 
 func init() {
+	MailboxesTable.ForeignKeys[0].RefTable = AccountsTable
+	MessagesTable.ForeignKeys[0].RefTable = MailboxesTable
 }

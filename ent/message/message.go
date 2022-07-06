@@ -7,19 +7,51 @@ const (
 	Label = "message"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
+	// FieldMessageID holds the string denoting the message_id field in the database.
+	FieldMessageID = "message_id"
+	// FieldImapUID holds the string denoting the imap_uid field in the database.
+	FieldImapUID = "imap_uid"
+	// FieldHeader holds the string denoting the header field in the database.
+	FieldHeader = "header"
+	// FieldBody holds the string denoting the body field in the database.
+	FieldBody = "body"
+	// EdgeMailbox holds the string denoting the mailbox edge name in mutations.
+	EdgeMailbox = "mailbox"
 	// Table holds the table name of the message in the database.
 	Table = "messages"
+	// MailboxTable is the table that holds the mailbox relation/edge.
+	MailboxTable = "messages"
+	// MailboxInverseTable is the table name for the Mailbox entity.
+	// It exists in this package in order to avoid circular dependency with the "mailbox" package.
+	MailboxInverseTable = "mailboxes"
+	// MailboxColumn is the table column denoting the mailbox relation/edge.
+	MailboxColumn = "mailbox_messages"
 )
 
 // Columns holds all SQL columns for message fields.
 var Columns = []string{
 	FieldID,
+	FieldMessageID,
+	FieldImapUID,
+	FieldHeader,
+	FieldBody,
+}
+
+// ForeignKeys holds the SQL foreign-keys that are owned by the "messages"
+// table and are not defined as standalone fields in the schema.
+var ForeignKeys = []string{
+	"mailbox_messages",
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
 func ValidColumn(column string) bool {
 	for i := range Columns {
 		if column == Columns[i] {
+			return true
+		}
+	}
+	for i := range ForeignKeys {
+		if column == ForeignKeys[i] {
 			return true
 		}
 	}

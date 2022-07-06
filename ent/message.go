@@ -7,14 +7,50 @@ import (
 	"strings"
 
 	"entgo.io/ent/dialect/sql"
+	"github.com/hut8/amu/ent/mailbox"
 	"github.com/hut8/amu/ent/message"
 )
 
 // Message is the model entity for the Message schema.
 type Message struct {
-	config
+	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
+	// MessageID holds the value of the "message_id" field.
+	MessageID string `json:"message_id,omitempty"`
+	// ImapUID holds the value of the "imap_uid" field.
+	ImapUID *uint32 `json:"imap_uid,omitempty"`
+	// Header holds the value of the "header" field.
+	Header *string `json:"header,omitempty"`
+	// Body holds the value of the "body" field.
+	Body *string `json:"body,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the MessageQuery when eager-loading is set.
+	Edges            MessageEdges `json:"edges"`
+	mailbox_messages *int
+}
+
+// MessageEdges holds the relations/edges for other nodes in the graph.
+type MessageEdges struct {
+	// Mailbox holds the value of the mailbox edge.
+	Mailbox *Mailbox `json:"mailbox,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// MailboxOrErr returns the Mailbox value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e MessageEdges) MailboxOrErr() (*Mailbox, error) {
+	if e.loadedTypes[0] {
+		if e.Mailbox == nil {
+			// The edge mailbox was loaded in eager-loading,
+			// but was not found.
+			return nil, &NotFoundError{label: mailbox.Label}
+		}
+		return e.Mailbox, nil
+	}
+	return nil, &NotLoadedError{edge: "mailbox"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -22,7 +58,11 @@ func (*Message) scanValues(columns []string) ([]interface{}, error) {
 	values := make([]interface{}, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case message.FieldID:
+		case message.FieldID, message.FieldImapUID:
+			values[i] = new(sql.NullInt64)
+		case message.FieldMessageID, message.FieldHeader, message.FieldBody:
+			values[i] = new(sql.NullString)
+		case message.ForeignKeys[0]: // mailbox_messages
 			values[i] = new(sql.NullInt64)
 		default:
 			return nil, fmt.Errorf("unexpected column %q for type Message", columns[i])
@@ -45,9 +85,48 @@ func (m *Message) assignValues(columns []string, values []interface{}) error {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			m.ID = int(value.Int64)
+		case message.FieldMessageID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field message_id", values[i])
+			} else if value.Valid {
+				m.MessageID = value.String
+			}
+		case message.FieldImapUID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field imap_uid", values[i])
+			} else if value.Valid {
+				m.ImapUID = new(uint32)
+				*m.ImapUID = uint32(value.Int64)
+			}
+		case message.FieldHeader:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field header", values[i])
+			} else if value.Valid {
+				m.Header = new(string)
+				*m.Header = value.String
+			}
+		case message.FieldBody:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field body", values[i])
+			} else if value.Valid {
+				m.Body = new(string)
+				*m.Body = value.String
+			}
+		case message.ForeignKeys[0]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field mailbox_messages", value)
+			} else if value.Valid {
+				m.mailbox_messages = new(int)
+				*m.mailbox_messages = int(value.Int64)
+			}
 		}
 	}
 	return nil
+}
+
+// QueryMailbox queries the "mailbox" edge of the Message entity.
+func (m *Message) QueryMailbox() *MailboxQuery {
+	return (&MessageClient{config: m.config}).QueryMailbox(m)
 }
 
 // Update returns a builder for updating this Message.
@@ -73,6 +152,20 @@ func (m *Message) String() string {
 	var builder strings.Builder
 	builder.WriteString("Message(")
 	builder.WriteString(fmt.Sprintf("id=%v", m.ID))
+	builder.WriteString(", message_id=")
+	builder.WriteString(m.MessageID)
+	if v := m.ImapUID; v != nil {
+		builder.WriteString(", imap_uid=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	if v := m.Header; v != nil {
+		builder.WriteString(", header=")
+		builder.WriteString(*v)
+	}
+	if v := m.Body; v != nil {
+		builder.WriteString(", body=")
+		builder.WriteString(*v)
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

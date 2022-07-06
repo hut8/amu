@@ -8,6 +8,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/hut8/amu/ent/account"
+	"github.com/hut8/amu/ent/mailbox"
 	"github.com/hut8/amu/ent/message"
 )
 
@@ -29,6 +31,8 @@ type OrderFunc func(*sql.Selector)
 // columnChecker returns a function indicates if the column exists in the given column.
 func columnChecker(table string) func(string) error {
 	checks := map[string]func(string) bool{
+		account.Table: account.ValidColumn,
+		mailbox.Table: mailbox.ValidColumn,
 		message.Table: message.ValidColumn,
 	}
 	check, ok := checks[table]

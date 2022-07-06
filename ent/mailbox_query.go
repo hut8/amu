@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"math"
@@ -11,62 +12,64 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/hut8/amu/ent/account"
 	"github.com/hut8/amu/ent/mailbox"
 	"github.com/hut8/amu/ent/message"
 	"github.com/hut8/amu/ent/predicate"
 )
 
-// MessageQuery is the builder for querying Message entities.
-type MessageQuery struct {
+// MailboxQuery is the builder for querying Mailbox entities.
+type MailboxQuery struct {
 	config
 	limit      *int
 	offset     *int
 	unique     *bool
 	order      []OrderFunc
 	fields     []string
-	predicates []predicate.Message
+	predicates []predicate.Mailbox
 	// eager-loading edges.
-	withMailbox *MailboxQuery
-	withFKs     bool
+	withAccount  *AccountQuery
+	withMessages *MessageQuery
+	withFKs      bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
 }
 
-// Where adds a new predicate for the MessageQuery builder.
-func (mq *MessageQuery) Where(ps ...predicate.Message) *MessageQuery {
+// Where adds a new predicate for the MailboxQuery builder.
+func (mq *MailboxQuery) Where(ps ...predicate.Mailbox) *MailboxQuery {
 	mq.predicates = append(mq.predicates, ps...)
 	return mq
 }
 
 // Limit adds a limit step to the query.
-func (mq *MessageQuery) Limit(limit int) *MessageQuery {
+func (mq *MailboxQuery) Limit(limit int) *MailboxQuery {
 	mq.limit = &limit
 	return mq
 }
 
 // Offset adds an offset step to the query.
-func (mq *MessageQuery) Offset(offset int) *MessageQuery {
+func (mq *MailboxQuery) Offset(offset int) *MailboxQuery {
 	mq.offset = &offset
 	return mq
 }
 
 // Unique configures the query builder to filter duplicate records on query.
 // By default, unique is set to true, and can be disabled using this method.
-func (mq *MessageQuery) Unique(unique bool) *MessageQuery {
+func (mq *MailboxQuery) Unique(unique bool) *MailboxQuery {
 	mq.unique = &unique
 	return mq
 }
 
 // Order adds an order step to the query.
-func (mq *MessageQuery) Order(o ...OrderFunc) *MessageQuery {
+func (mq *MailboxQuery) Order(o ...OrderFunc) *MailboxQuery {
 	mq.order = append(mq.order, o...)
 	return mq
 }
 
-// QueryMailbox chains the current query on the "mailbox" edge.
-func (mq *MessageQuery) QueryMailbox() *MailboxQuery {
-	query := &MailboxQuery{config: mq.config}
+// QueryAccount chains the current query on the "account" edge.
+func (mq *MailboxQuery) QueryAccount() *AccountQuery {
+	query := &AccountQuery{config: mq.config}
 	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
 		if err := mq.prepareQuery(ctx); err != nil {
 			return nil, err
@@ -76,9 +79,9 @@ func (mq *MessageQuery) QueryMailbox() *MailboxQuery {
 			return nil, err
 		}
 		step := sqlgraph.NewStep(
-			sqlgraph.From(message.Table, message.FieldID, selector),
-			sqlgraph.To(mailbox.Table, mailbox.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, message.MailboxTable, message.MailboxColumn),
+			sqlgraph.From(mailbox.Table, mailbox.FieldID, selector),
+			sqlgraph.To(account.Table, account.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, mailbox.AccountTable, mailbox.AccountColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
 		return fromU, nil
@@ -86,21 +89,43 @@ func (mq *MessageQuery) QueryMailbox() *MailboxQuery {
 	return query
 }
 
-// First returns the first Message entity from the query.
-// Returns a *NotFoundError when no Message was found.
-func (mq *MessageQuery) First(ctx context.Context) (*Message, error) {
+// QueryMessages chains the current query on the "messages" edge.
+func (mq *MailboxQuery) QueryMessages() *MessageQuery {
+	query := &MessageQuery{config: mq.config}
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := mq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := mq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mailbox.Table, mailbox.FieldID, selector),
+			sqlgraph.To(message.Table, message.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, mailbox.MessagesTable, mailbox.MessagesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// First returns the first Mailbox entity from the query.
+// Returns a *NotFoundError when no Mailbox was found.
+func (mq *MailboxQuery) First(ctx context.Context) (*Mailbox, error) {
 	nodes, err := mq.Limit(1).All(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if len(nodes) == 0 {
-		return nil, &NotFoundError{message.Label}
+		return nil, &NotFoundError{mailbox.Label}
 	}
 	return nodes[0], nil
 }
 
 // FirstX is like First, but panics if an error occurs.
-func (mq *MessageQuery) FirstX(ctx context.Context) *Message {
+func (mq *MailboxQuery) FirstX(ctx context.Context) *Mailbox {
 	node, err := mq.First(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
@@ -108,22 +133,22 @@ func (mq *MessageQuery) FirstX(ctx context.Context) *Message {
 	return node
 }
 
-// FirstID returns the first Message ID from the query.
-// Returns a *NotFoundError when no Message ID was found.
-func (mq *MessageQuery) FirstID(ctx context.Context) (id int, err error) {
+// FirstID returns the first Mailbox ID from the query.
+// Returns a *NotFoundError when no Mailbox ID was found.
+func (mq *MailboxQuery) FirstID(ctx context.Context) (id int, err error) {
 	var ids []int
 	if ids, err = mq.Limit(1).IDs(ctx); err != nil {
 		return
 	}
 	if len(ids) == 0 {
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 		return
 	}
 	return ids[0], nil
 }
 
 // FirstIDX is like FirstID, but panics if an error occurs.
-func (mq *MessageQuery) FirstIDX(ctx context.Context) int {
+func (mq *MailboxQuery) FirstIDX(ctx context.Context) int {
 	id, err := mq.FirstID(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
@@ -131,10 +156,10 @@ func (mq *MessageQuery) FirstIDX(ctx context.Context) int {
 	return id
 }
 
-// Only returns a single Message entity found by the query, ensuring it only returns one.
-// Returns a *NotSingularError when more than one Message entity is found.
-// Returns a *NotFoundError when no Message entities are found.
-func (mq *MessageQuery) Only(ctx context.Context) (*Message, error) {
+// Only returns a single Mailbox entity found by the query, ensuring it only returns one.
+// Returns a *NotSingularError when more than one Mailbox entity is found.
+// Returns a *NotFoundError when no Mailbox entities are found.
+func (mq *MailboxQuery) Only(ctx context.Context) (*Mailbox, error) {
 	nodes, err := mq.Limit(2).All(ctx)
 	if err != nil {
 		return nil, err
@@ -143,14 +168,14 @@ func (mq *MessageQuery) Only(ctx context.Context) (*Message, error) {
 	case 1:
 		return nodes[0], nil
 	case 0:
-		return nil, &NotFoundError{message.Label}
+		return nil, &NotFoundError{mailbox.Label}
 	default:
-		return nil, &NotSingularError{message.Label}
+		return nil, &NotSingularError{mailbox.Label}
 	}
 }
 
 // OnlyX is like Only, but panics if an error occurs.
-func (mq *MessageQuery) OnlyX(ctx context.Context) *Message {
+func (mq *MailboxQuery) OnlyX(ctx context.Context) *Mailbox {
 	node, err := mq.Only(ctx)
 	if err != nil {
 		panic(err)
@@ -158,10 +183,10 @@ func (mq *MessageQuery) OnlyX(ctx context.Context) *Message {
 	return node
 }
 
-// OnlyID is like Only, but returns the only Message ID in the query.
-// Returns a *NotSingularError when more than one Message ID is found.
+// OnlyID is like Only, but returns the only Mailbox ID in the query.
+// Returns a *NotSingularError when more than one Mailbox ID is found.
 // Returns a *NotFoundError when no entities are found.
-func (mq *MessageQuery) OnlyID(ctx context.Context) (id int, err error) {
+func (mq *MailboxQuery) OnlyID(ctx context.Context) (id int, err error) {
 	var ids []int
 	if ids, err = mq.Limit(2).IDs(ctx); err != nil {
 		return
@@ -170,15 +195,15 @@ func (mq *MessageQuery) OnlyID(ctx context.Context) (id int, err error) {
 	case 1:
 		id = ids[0]
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = &NotSingularError{message.Label}
+		err = &NotSingularError{mailbox.Label}
 	}
 	return
 }
 
 // OnlyIDX is like OnlyID, but panics if an error occurs.
-func (mq *MessageQuery) OnlyIDX(ctx context.Context) int {
+func (mq *MailboxQuery) OnlyIDX(ctx context.Context) int {
 	id, err := mq.OnlyID(ctx)
 	if err != nil {
 		panic(err)
@@ -186,8 +211,8 @@ func (mq *MessageQuery) OnlyIDX(ctx context.Context) int {
 	return id
 }
 
-// All executes the query and returns a list of Messages.
-func (mq *MessageQuery) All(ctx context.Context) ([]*Message, error) {
+// All executes the query and returns a list of Mailboxes.
+func (mq *MailboxQuery) All(ctx context.Context) ([]*Mailbox, error) {
 	if err := mq.prepareQuery(ctx); err != nil {
 		return nil, err
 	}
@@ -195,7 +220,7 @@ func (mq *MessageQuery) All(ctx context.Context) ([]*Message, error) {
 }
 
 // AllX is like All, but panics if an error occurs.
-func (mq *MessageQuery) AllX(ctx context.Context) []*Message {
+func (mq *MailboxQuery) AllX(ctx context.Context) []*Mailbox {
 	nodes, err := mq.All(ctx)
 	if err != nil {
 		panic(err)
@@ -203,17 +228,17 @@ func (mq *MessageQuery) AllX(ctx context.Context) []*Message {
 	return nodes
 }
 
-// IDs executes the query and returns a list of Message IDs.
-func (mq *MessageQuery) IDs(ctx context.Context) ([]int, error) {
+// IDs executes the query and returns a list of Mailbox IDs.
+func (mq *MailboxQuery) IDs(ctx context.Context) ([]int, error) {
 	var ids []int
-	if err := mq.Select(message.FieldID).Scan(ctx, &ids); err != nil {
+	if err := mq.Select(mailbox.FieldID).Scan(ctx, &ids); err != nil {
 		return nil, err
 	}
 	return ids, nil
 }
 
 // IDsX is like IDs, but panics if an error occurs.
-func (mq *MessageQuery) IDsX(ctx context.Context) []int {
+func (mq *MailboxQuery) IDsX(ctx context.Context) []int {
 	ids, err := mq.IDs(ctx)
 	if err != nil {
 		panic(err)
@@ -222,7 +247,7 @@ func (mq *MessageQuery) IDsX(ctx context.Context) []int {
 }
 
 // Count returns the count of the given query.
-func (mq *MessageQuery) Count(ctx context.Context) (int, error) {
+func (mq *MailboxQuery) Count(ctx context.Context) (int, error) {
 	if err := mq.prepareQuery(ctx); err != nil {
 		return 0, err
 	}
@@ -230,7 +255,7 @@ func (mq *MessageQuery) Count(ctx context.Context) (int, error) {
 }
 
 // CountX is like Count, but panics if an error occurs.
-func (mq *MessageQuery) CountX(ctx context.Context) int {
+func (mq *MailboxQuery) CountX(ctx context.Context) int {
 	count, err := mq.Count(ctx)
 	if err != nil {
 		panic(err)
@@ -239,7 +264,7 @@ func (mq *MessageQuery) CountX(ctx context.Context) int {
 }
 
 // Exist returns true if the query has elements in the graph.
-func (mq *MessageQuery) Exist(ctx context.Context) (bool, error) {
+func (mq *MailboxQuery) Exist(ctx context.Context) (bool, error) {
 	if err := mq.prepareQuery(ctx); err != nil {
 		return false, err
 	}
@@ -247,7 +272,7 @@ func (mq *MessageQuery) Exist(ctx context.Context) (bool, error) {
 }
 
 // ExistX is like Exist, but panics if an error occurs.
-func (mq *MessageQuery) ExistX(ctx context.Context) bool {
+func (mq *MailboxQuery) ExistX(ctx context.Context) bool {
 	exist, err := mq.Exist(ctx)
 	if err != nil {
 		panic(err)
@@ -255,19 +280,20 @@ func (mq *MessageQuery) ExistX(ctx context.Context) bool {
 	return exist
 }
 
-// Clone returns a duplicate of the MessageQuery builder, including all associated steps. It can be
+// Clone returns a duplicate of the MailboxQuery builder, including all associated steps. It can be
 // used to prepare common query builders and use them differently after the clone is made.
-func (mq *MessageQuery) Clone() *MessageQuery {
+func (mq *MailboxQuery) Clone() *MailboxQuery {
 	if mq == nil {
 		return nil
 	}
-	return &MessageQuery{
-		config:      mq.config,
-		limit:       mq.limit,
-		offset:      mq.offset,
-		order:       append([]OrderFunc{}, mq.order...),
-		predicates:  append([]predicate.Message{}, mq.predicates...),
-		withMailbox: mq.withMailbox.Clone(),
+	return &MailboxQuery{
+		config:       mq.config,
+		limit:        mq.limit,
+		offset:       mq.offset,
+		order:        append([]OrderFunc{}, mq.order...),
+		predicates:   append([]predicate.Mailbox{}, mq.predicates...),
+		withAccount:  mq.withAccount.Clone(),
+		withMessages: mq.withMessages.Clone(),
 		// clone intermediate query.
 		sql:    mq.sql.Clone(),
 		path:   mq.path,
@@ -275,14 +301,25 @@ func (mq *MessageQuery) Clone() *MessageQuery {
 	}
 }
 
-// WithMailbox tells the query-builder to eager-load the nodes that are connected to
-// the "mailbox" edge. The optional arguments are used to configure the query builder of the edge.
-func (mq *MessageQuery) WithMailbox(opts ...func(*MailboxQuery)) *MessageQuery {
-	query := &MailboxQuery{config: mq.config}
+// WithAccount tells the query-builder to eager-load the nodes that are connected to
+// the "account" edge. The optional arguments are used to configure the query builder of the edge.
+func (mq *MailboxQuery) WithAccount(opts ...func(*AccountQuery)) *MailboxQuery {
+	query := &AccountQuery{config: mq.config}
 	for _, opt := range opts {
 		opt(query)
 	}
-	mq.withMailbox = query
+	mq.withAccount = query
+	return mq
+}
+
+// WithMessages tells the query-builder to eager-load the nodes that are connected to
+// the "messages" edge. The optional arguments are used to configure the query builder of the edge.
+func (mq *MailboxQuery) WithMessages(opts ...func(*MessageQuery)) *MailboxQuery {
+	query := &MessageQuery{config: mq.config}
+	for _, opt := range opts {
+		opt(query)
+	}
+	mq.withMessages = query
 	return mq
 }
 
@@ -292,17 +329,17 @@ func (mq *MessageQuery) WithMailbox(opts ...func(*MailboxQuery)) *MessageQuery {
 // Example:
 //
 //	var v []struct {
-//		MessageID string `json:"message_id,omitempty"`
+//		Name string `json:"name,omitempty"`
 //		Count int `json:"count,omitempty"`
 //	}
 //
-//	client.Message.Query().
-//		GroupBy(message.FieldMessageID).
+//	client.Mailbox.Query().
+//		GroupBy(mailbox.FieldName).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
 //
-func (mq *MessageQuery) GroupBy(field string, fields ...string) *MessageGroupBy {
-	group := &MessageGroupBy{config: mq.config}
+func (mq *MailboxQuery) GroupBy(field string, fields ...string) *MailboxGroupBy {
+	group := &MailboxGroupBy{config: mq.config}
 	group.fields = append([]string{field}, fields...)
 	group.path = func(ctx context.Context) (prev *sql.Selector, err error) {
 		if err := mq.prepareQuery(ctx); err != nil {
@@ -319,21 +356,21 @@ func (mq *MessageQuery) GroupBy(field string, fields ...string) *MessageGroupBy 
 // Example:
 //
 //	var v []struct {
-//		MessageID string `json:"message_id,omitempty"`
+//		Name string `json:"name,omitempty"`
 //	}
 //
-//	client.Message.Query().
-//		Select(message.FieldMessageID).
+//	client.Mailbox.Query().
+//		Select(mailbox.FieldName).
 //		Scan(ctx, &v)
 //
-func (mq *MessageQuery) Select(fields ...string) *MessageSelect {
+func (mq *MailboxQuery) Select(fields ...string) *MailboxSelect {
 	mq.fields = append(mq.fields, fields...)
-	return &MessageSelect{MessageQuery: mq}
+	return &MailboxSelect{MailboxQuery: mq}
 }
 
-func (mq *MessageQuery) prepareQuery(ctx context.Context) error {
+func (mq *MailboxQuery) prepareQuery(ctx context.Context) error {
 	for _, f := range mq.fields {
-		if !message.ValidColumn(f) {
+		if !mailbox.ValidColumn(f) {
 			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for query", f)}
 		}
 	}
@@ -347,23 +384,24 @@ func (mq *MessageQuery) prepareQuery(ctx context.Context) error {
 	return nil
 }
 
-func (mq *MessageQuery) sqlAll(ctx context.Context) ([]*Message, error) {
+func (mq *MailboxQuery) sqlAll(ctx context.Context) ([]*Mailbox, error) {
 	var (
-		nodes       = []*Message{}
+		nodes       = []*Mailbox{}
 		withFKs     = mq.withFKs
 		_spec       = mq.querySpec()
-		loadedTypes = [1]bool{
-			mq.withMailbox != nil,
+		loadedTypes = [2]bool{
+			mq.withAccount != nil,
+			mq.withMessages != nil,
 		}
 	)
-	if mq.withMailbox != nil {
+	if mq.withAccount != nil {
 		withFKs = true
 	}
 	if withFKs {
-		_spec.Node.Columns = append(_spec.Node.Columns, message.ForeignKeys...)
+		_spec.Node.Columns = append(_spec.Node.Columns, mailbox.ForeignKeys...)
 	}
 	_spec.ScanValues = func(columns []string) ([]interface{}, error) {
-		node := &Message{config: mq.config}
+		node := &Mailbox{config: mq.config}
 		nodes = append(nodes, node)
 		return node.scanValues(columns)
 	}
@@ -382,20 +420,20 @@ func (mq *MessageQuery) sqlAll(ctx context.Context) ([]*Message, error) {
 		return nodes, nil
 	}
 
-	if query := mq.withMailbox; query != nil {
+	if query := mq.withAccount; query != nil {
 		ids := make([]int, 0, len(nodes))
-		nodeids := make(map[int][]*Message)
+		nodeids := make(map[int][]*Mailbox)
 		for i := range nodes {
-			if nodes[i].mailbox_messages == nil {
+			if nodes[i].account_mailboxes == nil {
 				continue
 			}
-			fk := *nodes[i].mailbox_messages
+			fk := *nodes[i].account_mailboxes
 			if _, ok := nodeids[fk]; !ok {
 				ids = append(ids, fk)
 			}
 			nodeids[fk] = append(nodeids[fk], nodes[i])
 		}
-		query.Where(mailbox.IDIn(ids...))
+		query.Where(account.IDIn(ids...))
 		neighbors, err := query.All(ctx)
 		if err != nil {
 			return nil, err
@@ -403,18 +441,47 @@ func (mq *MessageQuery) sqlAll(ctx context.Context) ([]*Message, error) {
 		for _, n := range neighbors {
 			nodes, ok := nodeids[n.ID]
 			if !ok {
-				return nil, fmt.Errorf(`unexpected foreign-key "mailbox_messages" returned %v`, n.ID)
+				return nil, fmt.Errorf(`unexpected foreign-key "account_mailboxes" returned %v`, n.ID)
 			}
 			for i := range nodes {
-				nodes[i].Edges.Mailbox = n
+				nodes[i].Edges.Account = n
 			}
+		}
+	}
+
+	if query := mq.withMessages; query != nil {
+		fks := make([]driver.Value, 0, len(nodes))
+		nodeids := make(map[int]*Mailbox)
+		for i := range nodes {
+			fks = append(fks, nodes[i].ID)
+			nodeids[nodes[i].ID] = nodes[i]
+			nodes[i].Edges.Messages = []*Message{}
+		}
+		query.withFKs = true
+		query.Where(predicate.Message(func(s *sql.Selector) {
+			s.Where(sql.InValues(mailbox.MessagesColumn, fks...))
+		}))
+		neighbors, err := query.All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range neighbors {
+			fk := n.mailbox_messages
+			if fk == nil {
+				return nil, fmt.Errorf(`foreign-key "mailbox_messages" is nil for node %v`, n.ID)
+			}
+			node, ok := nodeids[*fk]
+			if !ok {
+				return nil, fmt.Errorf(`unexpected foreign-key "mailbox_messages" returned %v for node %v`, *fk, n.ID)
+			}
+			node.Edges.Messages = append(node.Edges.Messages, n)
 		}
 	}
 
 	return nodes, nil
 }
 
-func (mq *MessageQuery) sqlCount(ctx context.Context) (int, error) {
+func (mq *MailboxQuery) sqlCount(ctx context.Context) (int, error) {
 	_spec := mq.querySpec()
 	_spec.Node.Columns = mq.fields
 	if len(mq.fields) > 0 {
@@ -423,7 +490,7 @@ func (mq *MessageQuery) sqlCount(ctx context.Context) (int, error) {
 	return sqlgraph.CountNodes(ctx, mq.driver, _spec)
 }
 
-func (mq *MessageQuery) sqlExist(ctx context.Context) (bool, error) {
+func (mq *MailboxQuery) sqlExist(ctx context.Context) (bool, error) {
 	n, err := mq.sqlCount(ctx)
 	if err != nil {
 		return false, fmt.Errorf("ent: check existence: %w", err)
@@ -431,14 +498,14 @@ func (mq *MessageQuery) sqlExist(ctx context.Context) (bool, error) {
 	return n > 0, nil
 }
 
-func (mq *MessageQuery) querySpec() *sqlgraph.QuerySpec {
+func (mq *MailboxQuery) querySpec() *sqlgraph.QuerySpec {
 	_spec := &sqlgraph.QuerySpec{
 		Node: &sqlgraph.NodeSpec{
-			Table:   message.Table,
-			Columns: message.Columns,
+			Table:   mailbox.Table,
+			Columns: mailbox.Columns,
 			ID: &sqlgraph.FieldSpec{
 				Type:   field.TypeInt,
-				Column: message.FieldID,
+				Column: mailbox.FieldID,
 			},
 		},
 		From:   mq.sql,
@@ -449,9 +516,9 @@ func (mq *MessageQuery) querySpec() *sqlgraph.QuerySpec {
 	}
 	if fields := mq.fields; len(fields) > 0 {
 		_spec.Node.Columns = make([]string, 0, len(fields))
-		_spec.Node.Columns = append(_spec.Node.Columns, message.FieldID)
+		_spec.Node.Columns = append(_spec.Node.Columns, mailbox.FieldID)
 		for i := range fields {
-			if fields[i] != message.FieldID {
+			if fields[i] != mailbox.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
 		}
@@ -479,12 +546,12 @@ func (mq *MessageQuery) querySpec() *sqlgraph.QuerySpec {
 	return _spec
 }
 
-func (mq *MessageQuery) sqlQuery(ctx context.Context) *sql.Selector {
+func (mq *MailboxQuery) sqlQuery(ctx context.Context) *sql.Selector {
 	builder := sql.Dialect(mq.driver.Dialect())
-	t1 := builder.Table(message.Table)
+	t1 := builder.Table(mailbox.Table)
 	columns := mq.fields
 	if len(columns) == 0 {
-		columns = message.Columns
+		columns = mailbox.Columns
 	}
 	selector := builder.Select(t1.Columns(columns...)...).From(t1)
 	if mq.sql != nil {
@@ -511,8 +578,8 @@ func (mq *MessageQuery) sqlQuery(ctx context.Context) *sql.Selector {
 	return selector
 }
 
-// MessageGroupBy is the group-by builder for Message entities.
-type MessageGroupBy struct {
+// MailboxGroupBy is the group-by builder for Mailbox entities.
+type MailboxGroupBy struct {
 	config
 	fields []string
 	fns    []AggregateFunc
@@ -522,13 +589,13 @@ type MessageGroupBy struct {
 }
 
 // Aggregate adds the given aggregation functions to the group-by query.
-func (mgb *MessageGroupBy) Aggregate(fns ...AggregateFunc) *MessageGroupBy {
+func (mgb *MailboxGroupBy) Aggregate(fns ...AggregateFunc) *MailboxGroupBy {
 	mgb.fns = append(mgb.fns, fns...)
 	return mgb
 }
 
 // Scan applies the group-by query and scans the result into the given value.
-func (mgb *MessageGroupBy) Scan(ctx context.Context, v interface{}) error {
+func (mgb *MailboxGroupBy) Scan(ctx context.Context, v interface{}) error {
 	query, err := mgb.path(ctx)
 	if err != nil {
 		return err
@@ -538,7 +605,7 @@ func (mgb *MessageGroupBy) Scan(ctx context.Context, v interface{}) error {
 }
 
 // ScanX is like Scan, but panics if an error occurs.
-func (mgb *MessageGroupBy) ScanX(ctx context.Context, v interface{}) {
+func (mgb *MailboxGroupBy) ScanX(ctx context.Context, v interface{}) {
 	if err := mgb.Scan(ctx, v); err != nil {
 		panic(err)
 	}
@@ -546,9 +613,9 @@ func (mgb *MessageGroupBy) ScanX(ctx context.Context, v interface{}) {
 
 // Strings returns list of strings from group-by.
 // It is only allowed when executing a group-by query with one field.
-func (mgb *MessageGroupBy) Strings(ctx context.Context) ([]string, error) {
+func (mgb *MailboxGroupBy) Strings(ctx context.Context) ([]string, error) {
 	if len(mgb.fields) > 1 {
-		return nil, errors.New("ent: MessageGroupBy.Strings is not achievable when grouping more than 1 field")
+		return nil, errors.New("ent: MailboxGroupBy.Strings is not achievable when grouping more than 1 field")
 	}
 	var v []string
 	if err := mgb.Scan(ctx, &v); err != nil {
@@ -558,7 +625,7 @@ func (mgb *MessageGroupBy) Strings(ctx context.Context) ([]string, error) {
 }
 
 // StringsX is like Strings, but panics if an error occurs.
-func (mgb *MessageGroupBy) StringsX(ctx context.Context) []string {
+func (mgb *MailboxGroupBy) StringsX(ctx context.Context) []string {
 	v, err := mgb.Strings(ctx)
 	if err != nil {
 		panic(err)
@@ -568,7 +635,7 @@ func (mgb *MessageGroupBy) StringsX(ctx context.Context) []string {
 
 // String returns a single string from a group-by query.
 // It is only allowed when executing a group-by query with one field.
-func (mgb *MessageGroupBy) String(ctx context.Context) (_ string, err error) {
+func (mgb *MailboxGroupBy) String(ctx context.Context) (_ string, err error) {
 	var v []string
 	if v, err = mgb.Strings(ctx); err != nil {
 		return
@@ -577,15 +644,15 @@ func (mgb *MessageGroupBy) String(ctx context.Context) (_ string, err error) {
 	case 1:
 		return v[0], nil
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = fmt.Errorf("ent: MessageGroupBy.Strings returned %d results when one was expected", len(v))
+		err = fmt.Errorf("ent: MailboxGroupBy.Strings returned %d results when one was expected", len(v))
 	}
 	return
 }
 
 // StringX is like String, but panics if an error occurs.
-func (mgb *MessageGroupBy) StringX(ctx context.Context) string {
+func (mgb *MailboxGroupBy) StringX(ctx context.Context) string {
 	v, err := mgb.String(ctx)
 	if err != nil {
 		panic(err)
@@ -595,9 +662,9 @@ func (mgb *MessageGroupBy) StringX(ctx context.Context) string {
 
 // Ints returns list of ints from group-by.
 // It is only allowed when executing a group-by query with one field.
-func (mgb *MessageGroupBy) Ints(ctx context.Context) ([]int, error) {
+func (mgb *MailboxGroupBy) Ints(ctx context.Context) ([]int, error) {
 	if len(mgb.fields) > 1 {
-		return nil, errors.New("ent: MessageGroupBy.Ints is not achievable when grouping more than 1 field")
+		return nil, errors.New("ent: MailboxGroupBy.Ints is not achievable when grouping more than 1 field")
 	}
 	var v []int
 	if err := mgb.Scan(ctx, &v); err != nil {
@@ -607,7 +674,7 @@ func (mgb *MessageGroupBy) Ints(ctx context.Context) ([]int, error) {
 }
 
 // IntsX is like Ints, but panics if an error occurs.
-func (mgb *MessageGroupBy) IntsX(ctx context.Context) []int {
+func (mgb *MailboxGroupBy) IntsX(ctx context.Context) []int {
 	v, err := mgb.Ints(ctx)
 	if err != nil {
 		panic(err)
@@ -617,7 +684,7 @@ func (mgb *MessageGroupBy) IntsX(ctx context.Context) []int {
 
 // Int returns a single int from a group-by query.
 // It is only allowed when executing a group-by query with one field.
-func (mgb *MessageGroupBy) Int(ctx context.Context) (_ int, err error) {
+func (mgb *MailboxGroupBy) Int(ctx context.Context) (_ int, err error) {
 	var v []int
 	if v, err = mgb.Ints(ctx); err != nil {
 		return
@@ -626,15 +693,15 @@ func (mgb *MessageGroupBy) Int(ctx context.Context) (_ int, err error) {
 	case 1:
 		return v[0], nil
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = fmt.Errorf("ent: MessageGroupBy.Ints returned %d results when one was expected", len(v))
+		err = fmt.Errorf("ent: MailboxGroupBy.Ints returned %d results when one was expected", len(v))
 	}
 	return
 }
 
 // IntX is like Int, but panics if an error occurs.
-func (mgb *MessageGroupBy) IntX(ctx context.Context) int {
+func (mgb *MailboxGroupBy) IntX(ctx context.Context) int {
 	v, err := mgb.Int(ctx)
 	if err != nil {
 		panic(err)
@@ -644,9 +711,9 @@ func (mgb *MessageGroupBy) IntX(ctx context.Context) int {
 
 // Float64s returns list of float64s from group-by.
 // It is only allowed when executing a group-by query with one field.
-func (mgb *MessageGroupBy) Float64s(ctx context.Context) ([]float64, error) {
+func (mgb *MailboxGroupBy) Float64s(ctx context.Context) ([]float64, error) {
 	if len(mgb.fields) > 1 {
-		return nil, errors.New("ent: MessageGroupBy.Float64s is not achievable when grouping more than 1 field")
+		return nil, errors.New("ent: MailboxGroupBy.Float64s is not achievable when grouping more than 1 field")
 	}
 	var v []float64
 	if err := mgb.Scan(ctx, &v); err != nil {
@@ -656,7 +723,7 @@ func (mgb *MessageGroupBy) Float64s(ctx context.Context) ([]float64, error) {
 }
 
 // Float64sX is like Float64s, but panics if an error occurs.
-func (mgb *MessageGroupBy) Float64sX(ctx context.Context) []float64 {
+func (mgb *MailboxGroupBy) Float64sX(ctx context.Context) []float64 {
 	v, err := mgb.Float64s(ctx)
 	if err != nil {
 		panic(err)
@@ -666,7 +733,7 @@ func (mgb *MessageGroupBy) Float64sX(ctx context.Context) []float64 {
 
 // Float64 returns a single float64 from a group-by query.
 // It is only allowed when executing a group-by query with one field.
-func (mgb *MessageGroupBy) Float64(ctx context.Context) (_ float64, err error) {
+func (mgb *MailboxGroupBy) Float64(ctx context.Context) (_ float64, err error) {
 	var v []float64
 	if v, err = mgb.Float64s(ctx); err != nil {
 		return
@@ -675,15 +742,15 @@ func (mgb *MessageGroupBy) Float64(ctx context.Context) (_ float64, err error) {
 	case 1:
 		return v[0], nil
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = fmt.Errorf("ent: MessageGroupBy.Float64s returned %d results when one was expected", len(v))
+		err = fmt.Errorf("ent: MailboxGroupBy.Float64s returned %d results when one was expected", len(v))
 	}
 	return
 }
 
 // Float64X is like Float64, but panics if an error occurs.
-func (mgb *MessageGroupBy) Float64X(ctx context.Context) float64 {
+func (mgb *MailboxGroupBy) Float64X(ctx context.Context) float64 {
 	v, err := mgb.Float64(ctx)
 	if err != nil {
 		panic(err)
@@ -693,9 +760,9 @@ func (mgb *MessageGroupBy) Float64X(ctx context.Context) float64 {
 
 // Bools returns list of bools from group-by.
 // It is only allowed when executing a group-by query with one field.
-func (mgb *MessageGroupBy) Bools(ctx context.Context) ([]bool, error) {
+func (mgb *MailboxGroupBy) Bools(ctx context.Context) ([]bool, error) {
 	if len(mgb.fields) > 1 {
-		return nil, errors.New("ent: MessageGroupBy.Bools is not achievable when grouping more than 1 field")
+		return nil, errors.New("ent: MailboxGroupBy.Bools is not achievable when grouping more than 1 field")
 	}
 	var v []bool
 	if err := mgb.Scan(ctx, &v); err != nil {
@@ -705,7 +772,7 @@ func (mgb *MessageGroupBy) Bools(ctx context.Context) ([]bool, error) {
 }
 
 // BoolsX is like Bools, but panics if an error occurs.
-func (mgb *MessageGroupBy) BoolsX(ctx context.Context) []bool {
+func (mgb *MailboxGroupBy) BoolsX(ctx context.Context) []bool {
 	v, err := mgb.Bools(ctx)
 	if err != nil {
 		panic(err)
@@ -715,7 +782,7 @@ func (mgb *MessageGroupBy) BoolsX(ctx context.Context) []bool {
 
 // Bool returns a single bool from a group-by query.
 // It is only allowed when executing a group-by query with one field.
-func (mgb *MessageGroupBy) Bool(ctx context.Context) (_ bool, err error) {
+func (mgb *MailboxGroupBy) Bool(ctx context.Context) (_ bool, err error) {
 	var v []bool
 	if v, err = mgb.Bools(ctx); err != nil {
 		return
@@ -724,15 +791,15 @@ func (mgb *MessageGroupBy) Bool(ctx context.Context) (_ bool, err error) {
 	case 1:
 		return v[0], nil
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = fmt.Errorf("ent: MessageGroupBy.Bools returned %d results when one was expected", len(v))
+		err = fmt.Errorf("ent: MailboxGroupBy.Bools returned %d results when one was expected", len(v))
 	}
 	return
 }
 
 // BoolX is like Bool, but panics if an error occurs.
-func (mgb *MessageGroupBy) BoolX(ctx context.Context) bool {
+func (mgb *MailboxGroupBy) BoolX(ctx context.Context) bool {
 	v, err := mgb.Bool(ctx)
 	if err != nil {
 		panic(err)
@@ -740,9 +807,9 @@ func (mgb *MessageGroupBy) BoolX(ctx context.Context) bool {
 	return v
 }
 
-func (mgb *MessageGroupBy) sqlScan(ctx context.Context, v interface{}) error {
+func (mgb *MailboxGroupBy) sqlScan(ctx context.Context, v interface{}) error {
 	for _, f := range mgb.fields {
-		if !message.ValidColumn(f) {
+		if !mailbox.ValidColumn(f) {
 			return &ValidationError{Name: f, err: fmt.Errorf("invalid field %q for group-by", f)}
 		}
 	}
@@ -759,7 +826,7 @@ func (mgb *MessageGroupBy) sqlScan(ctx context.Context, v interface{}) error {
 	return sql.ScanSlice(rows, v)
 }
 
-func (mgb *MessageGroupBy) sqlQuery() *sql.Selector {
+func (mgb *MailboxGroupBy) sqlQuery() *sql.Selector {
 	selector := mgb.sql.Select()
 	aggregation := make([]string, 0, len(mgb.fns))
 	for _, fn := range mgb.fns {
@@ -778,33 +845,33 @@ func (mgb *MessageGroupBy) sqlQuery() *sql.Selector {
 	return selector.GroupBy(selector.Columns(mgb.fields...)...)
 }
 
-// MessageSelect is the builder for selecting fields of Message entities.
-type MessageSelect struct {
-	*MessageQuery
+// MailboxSelect is the builder for selecting fields of Mailbox entities.
+type MailboxSelect struct {
+	*MailboxQuery
 	// intermediate query (i.e. traversal path).
 	sql *sql.Selector
 }
 
 // Scan applies the selector query and scans the result into the given value.
-func (ms *MessageSelect) Scan(ctx context.Context, v interface{}) error {
+func (ms *MailboxSelect) Scan(ctx context.Context, v interface{}) error {
 	if err := ms.prepareQuery(ctx); err != nil {
 		return err
 	}
-	ms.sql = ms.MessageQuery.sqlQuery(ctx)
+	ms.sql = ms.MailboxQuery.sqlQuery(ctx)
 	return ms.sqlScan(ctx, v)
 }
 
 // ScanX is like Scan, but panics if an error occurs.
-func (ms *MessageSelect) ScanX(ctx context.Context, v interface{}) {
+func (ms *MailboxSelect) ScanX(ctx context.Context, v interface{}) {
 	if err := ms.Scan(ctx, v); err != nil {
 		panic(err)
 	}
 }
 
 // Strings returns list of strings from a selector. It is only allowed when selecting one field.
-func (ms *MessageSelect) Strings(ctx context.Context) ([]string, error) {
+func (ms *MailboxSelect) Strings(ctx context.Context) ([]string, error) {
 	if len(ms.fields) > 1 {
-		return nil, errors.New("ent: MessageSelect.Strings is not achievable when selecting more than 1 field")
+		return nil, errors.New("ent: MailboxSelect.Strings is not achievable when selecting more than 1 field")
 	}
 	var v []string
 	if err := ms.Scan(ctx, &v); err != nil {
@@ -814,7 +881,7 @@ func (ms *MessageSelect) Strings(ctx context.Context) ([]string, error) {
 }
 
 // StringsX is like Strings, but panics if an error occurs.
-func (ms *MessageSelect) StringsX(ctx context.Context) []string {
+func (ms *MailboxSelect) StringsX(ctx context.Context) []string {
 	v, err := ms.Strings(ctx)
 	if err != nil {
 		panic(err)
@@ -823,7 +890,7 @@ func (ms *MessageSelect) StringsX(ctx context.Context) []string {
 }
 
 // String returns a single string from a selector. It is only allowed when selecting one field.
-func (ms *MessageSelect) String(ctx context.Context) (_ string, err error) {
+func (ms *MailboxSelect) String(ctx context.Context) (_ string, err error) {
 	var v []string
 	if v, err = ms.Strings(ctx); err != nil {
 		return
@@ -832,15 +899,15 @@ func (ms *MessageSelect) String(ctx context.Context) (_ string, err error) {
 	case 1:
 		return v[0], nil
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = fmt.Errorf("ent: MessageSelect.Strings returned %d results when one was expected", len(v))
+		err = fmt.Errorf("ent: MailboxSelect.Strings returned %d results when one was expected", len(v))
 	}
 	return
 }
 
 // StringX is like String, but panics if an error occurs.
-func (ms *MessageSelect) StringX(ctx context.Context) string {
+func (ms *MailboxSelect) StringX(ctx context.Context) string {
 	v, err := ms.String(ctx)
 	if err != nil {
 		panic(err)
@@ -849,9 +916,9 @@ func (ms *MessageSelect) StringX(ctx context.Context) string {
 }
 
 // Ints returns list of ints from a selector. It is only allowed when selecting one field.
-func (ms *MessageSelect) Ints(ctx context.Context) ([]int, error) {
+func (ms *MailboxSelect) Ints(ctx context.Context) ([]int, error) {
 	if len(ms.fields) > 1 {
-		return nil, errors.New("ent: MessageSelect.Ints is not achievable when selecting more than 1 field")
+		return nil, errors.New("ent: MailboxSelect.Ints is not achievable when selecting more than 1 field")
 	}
 	var v []int
 	if err := ms.Scan(ctx, &v); err != nil {
@@ -861,7 +928,7 @@ func (ms *MessageSelect) Ints(ctx context.Context) ([]int, error) {
 }
 
 // IntsX is like Ints, but panics if an error occurs.
-func (ms *MessageSelect) IntsX(ctx context.Context) []int {
+func (ms *MailboxSelect) IntsX(ctx context.Context) []int {
 	v, err := ms.Ints(ctx)
 	if err != nil {
 		panic(err)
@@ -870,7 +937,7 @@ func (ms *MessageSelect) IntsX(ctx context.Context) []int {
 }
 
 // Int returns a single int from a selector. It is only allowed when selecting one field.
-func (ms *MessageSelect) Int(ctx context.Context) (_ int, err error) {
+func (ms *MailboxSelect) Int(ctx context.Context) (_ int, err error) {
 	var v []int
 	if v, err = ms.Ints(ctx); err != nil {
 		return
@@ -879,15 +946,15 @@ func (ms *MessageSelect) Int(ctx context.Context) (_ int, err error) {
 	case 1:
 		return v[0], nil
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = fmt.Errorf("ent: MessageSelect.Ints returned %d results when one was expected", len(v))
+		err = fmt.Errorf("ent: MailboxSelect.Ints returned %d results when one was expected", len(v))
 	}
 	return
 }
 
 // IntX is like Int, but panics if an error occurs.
-func (ms *MessageSelect) IntX(ctx context.Context) int {
+func (ms *MailboxSelect) IntX(ctx context.Context) int {
 	v, err := ms.Int(ctx)
 	if err != nil {
 		panic(err)
@@ -896,9 +963,9 @@ func (ms *MessageSelect) IntX(ctx context.Context) int {
 }
 
 // Float64s returns list of float64s from a selector. It is only allowed when selecting one field.
-func (ms *MessageSelect) Float64s(ctx context.Context) ([]float64, error) {
+func (ms *MailboxSelect) Float64s(ctx context.Context) ([]float64, error) {
 	if len(ms.fields) > 1 {
-		return nil, errors.New("ent: MessageSelect.Float64s is not achievable when selecting more than 1 field")
+		return nil, errors.New("ent: MailboxSelect.Float64s is not achievable when selecting more than 1 field")
 	}
 	var v []float64
 	if err := ms.Scan(ctx, &v); err != nil {
@@ -908,7 +975,7 @@ func (ms *MessageSelect) Float64s(ctx context.Context) ([]float64, error) {
 }
 
 // Float64sX is like Float64s, but panics if an error occurs.
-func (ms *MessageSelect) Float64sX(ctx context.Context) []float64 {
+func (ms *MailboxSelect) Float64sX(ctx context.Context) []float64 {
 	v, err := ms.Float64s(ctx)
 	if err != nil {
 		panic(err)
@@ -917,7 +984,7 @@ func (ms *MessageSelect) Float64sX(ctx context.Context) []float64 {
 }
 
 // Float64 returns a single float64 from a selector. It is only allowed when selecting one field.
-func (ms *MessageSelect) Float64(ctx context.Context) (_ float64, err error) {
+func (ms *MailboxSelect) Float64(ctx context.Context) (_ float64, err error) {
 	var v []float64
 	if v, err = ms.Float64s(ctx); err != nil {
 		return
@@ -926,15 +993,15 @@ func (ms *MessageSelect) Float64(ctx context.Context) (_ float64, err error) {
 	case 1:
 		return v[0], nil
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = fmt.Errorf("ent: MessageSelect.Float64s returned %d results when one was expected", len(v))
+		err = fmt.Errorf("ent: MailboxSelect.Float64s returned %d results when one was expected", len(v))
 	}
 	return
 }
 
 // Float64X is like Float64, but panics if an error occurs.
-func (ms *MessageSelect) Float64X(ctx context.Context) float64 {
+func (ms *MailboxSelect) Float64X(ctx context.Context) float64 {
 	v, err := ms.Float64(ctx)
 	if err != nil {
 		panic(err)
@@ -943,9 +1010,9 @@ func (ms *MessageSelect) Float64X(ctx context.Context) float64 {
 }
 
 // Bools returns list of bools from a selector. It is only allowed when selecting one field.
-func (ms *MessageSelect) Bools(ctx context.Context) ([]bool, error) {
+func (ms *MailboxSelect) Bools(ctx context.Context) ([]bool, error) {
 	if len(ms.fields) > 1 {
-		return nil, errors.New("ent: MessageSelect.Bools is not achievable when selecting more than 1 field")
+		return nil, errors.New("ent: MailboxSelect.Bools is not achievable when selecting more than 1 field")
 	}
 	var v []bool
 	if err := ms.Scan(ctx, &v); err != nil {
@@ -955,7 +1022,7 @@ func (ms *MessageSelect) Bools(ctx context.Context) ([]bool, error) {
 }
 
 // BoolsX is like Bools, but panics if an error occurs.
-func (ms *MessageSelect) BoolsX(ctx context.Context) []bool {
+func (ms *MailboxSelect) BoolsX(ctx context.Context) []bool {
 	v, err := ms.Bools(ctx)
 	if err != nil {
 		panic(err)
@@ -964,7 +1031,7 @@ func (ms *MessageSelect) BoolsX(ctx context.Context) []bool {
 }
 
 // Bool returns a single bool from a selector. It is only allowed when selecting one field.
-func (ms *MessageSelect) Bool(ctx context.Context) (_ bool, err error) {
+func (ms *MailboxSelect) Bool(ctx context.Context) (_ bool, err error) {
 	var v []bool
 	if v, err = ms.Bools(ctx); err != nil {
 		return
@@ -973,15 +1040,15 @@ func (ms *MessageSelect) Bool(ctx context.Context) (_ bool, err error) {
 	case 1:
 		return v[0], nil
 	case 0:
-		err = &NotFoundError{message.Label}
+		err = &NotFoundError{mailbox.Label}
 	default:
-		err = fmt.Errorf("ent: MessageSelect.Bools returned %d results when one was expected", len(v))
+		err = fmt.Errorf("ent: MailboxSelect.Bools returned %d results when one was expected", len(v))
 	}
 	return
 }
 
 // BoolX is like Bool, but panics if an error occurs.
-func (ms *MessageSelect) BoolX(ctx context.Context) bool {
+func (ms *MailboxSelect) BoolX(ctx context.Context) bool {
 	v, err := ms.Bool(ctx)
 	if err != nil {
 		panic(err)
@@ -989,7 +1056,7 @@ func (ms *MessageSelect) BoolX(ctx context.Context) bool {
 	return v
 }
 
-func (ms *MessageSelect) sqlScan(ctx context.Context, v interface{}) error {
+func (ms *MailboxSelect) sqlScan(ctx context.Context, v interface{}) error {
 	rows := &sql.Rows{}
 	query, args := ms.sql.Query()
 	if err := ms.driver.Query(ctx, query, args, rows); err != nil {

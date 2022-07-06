@@ -9,6 +9,32 @@ import (
 	"github.com/hut8/amu/ent"
 )
 
+// The AccountFunc type is an adapter to allow the use of ordinary
+// function as Account mutator.
+type AccountFunc func(context.Context, *ent.AccountMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	mv, ok := m.(*ent.AccountMutation)
+	if !ok {
+		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountMutation", m)
+	}
+	return f(ctx, mv)
+}
+
+// The MailboxFunc type is an adapter to allow the use of ordinary
+// function as Mailbox mutator.
+type MailboxFunc func(context.Context, *ent.MailboxMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MailboxFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	mv, ok := m.(*ent.MailboxMutation)
+	if !ok {
+		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MailboxMutation", m)
+	}
+	return f(ctx, mv)
+}
+
 // The MessageFunc type is an adapter to allow the use of ordinary
 // function as Message mutator.
 type MessageFunc func(context.Context, *ent.MessageMutation) (ent.Value, error)

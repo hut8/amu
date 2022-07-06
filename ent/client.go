@@ -9,10 +9,13 @@ import (
 
 	"github.com/hut8/amu/ent/migrate"
 
+	"github.com/hut8/amu/ent/account"
+	"github.com/hut8/amu/ent/mailbox"
 	"github.com/hut8/amu/ent/message"
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 // Client is the client that holds all ent builders.
@@ -20,6 +23,10 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// Account is the client for interacting with the Account builders.
+	Account *AccountClient
+	// Mailbox is the client for interacting with the Mailbox builders.
+	Mailbox *MailboxClient
 	// Message is the client for interacting with the Message builders.
 	Message *MessageClient
 }
@@ -35,6 +42,8 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.Account = NewAccountClient(c.config)
+	c.Mailbox = NewMailboxClient(c.config)
 	c.Message = NewMessageClient(c.config)
 }
 
@@ -69,6 +78,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:     ctx,
 		config:  cfg,
+		Account: NewAccountClient(cfg),
+		Mailbox: NewMailboxClient(cfg),
 		Message: NewMessageClient(cfg),
 	}, nil
 }
@@ -89,6 +100,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:     ctx,
 		config:  cfg,
+		Account: NewAccountClient(cfg),
+		Mailbox: NewMailboxClient(cfg),
 		Message: NewMessageClient(cfg),
 	}, nil
 }
@@ -96,7 +109,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		Message.
+//		Account.
 //		Query().
 //		Count(ctx)
 //
@@ -119,7 +132,237 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
+	c.Account.Use(hooks...)
+	c.Mailbox.Use(hooks...)
 	c.Message.Use(hooks...)
+}
+
+// AccountClient is a client for the Account schema.
+type AccountClient struct {
+	config
+}
+
+// NewAccountClient returns a client for the Account from the given config.
+func NewAccountClient(c config) *AccountClient {
+	return &AccountClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `account.Hooks(f(g(h())))`.
+func (c *AccountClient) Use(hooks ...Hook) {
+	c.hooks.Account = append(c.hooks.Account, hooks...)
+}
+
+// Create returns a create builder for Account.
+func (c *AccountClient) Create() *AccountCreate {
+	mutation := newAccountMutation(c.config, OpCreate)
+	return &AccountCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Account entities.
+func (c *AccountClient) CreateBulk(builders ...*AccountCreate) *AccountCreateBulk {
+	return &AccountCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Account.
+func (c *AccountClient) Update() *AccountUpdate {
+	mutation := newAccountMutation(c.config, OpUpdate)
+	return &AccountUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountClient) UpdateOne(a *Account) *AccountUpdateOne {
+	mutation := newAccountMutation(c.config, OpUpdateOne, withAccount(a))
+	return &AccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountClient) UpdateOneID(id int) *AccountUpdateOne {
+	mutation := newAccountMutation(c.config, OpUpdateOne, withAccountID(id))
+	return &AccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Account.
+func (c *AccountClient) Delete() *AccountDelete {
+	mutation := newAccountMutation(c.config, OpDelete)
+	return &AccountDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a delete builder for the given entity.
+func (c *AccountClient) DeleteOne(a *Account) *AccountDeleteOne {
+	return c.DeleteOneID(a.ID)
+}
+
+// DeleteOneID returns a delete builder for the given id.
+func (c *AccountClient) DeleteOneID(id int) *AccountDeleteOne {
+	builder := c.Delete().Where(account.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountDeleteOne{builder}
+}
+
+// Query returns a query builder for Account.
+func (c *AccountClient) Query() *AccountQuery {
+	return &AccountQuery{
+		config: c.config,
+	}
+}
+
+// Get returns a Account entity by its id.
+func (c *AccountClient) Get(ctx context.Context, id int) (*Account, error) {
+	return c.Query().Where(account.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountClient) GetX(ctx context.Context, id int) *Account {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMailboxes queries the mailboxes edge of a Account.
+func (c *AccountClient) QueryMailboxes(a *Account) *MailboxQuery {
+	query := &MailboxQuery{config: c.config}
+	query.path = func(ctx context.Context) (fromV *sql.Selector, _ error) {
+		id := a.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, id),
+			sqlgraph.To(mailbox.Table, mailbox.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, account.MailboxesTable, account.MailboxesColumn),
+		)
+		fromV = sqlgraph.Neighbors(a.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AccountClient) Hooks() []Hook {
+	return c.hooks.Account
+}
+
+// MailboxClient is a client for the Mailbox schema.
+type MailboxClient struct {
+	config
+}
+
+// NewMailboxClient returns a client for the Mailbox from the given config.
+func NewMailboxClient(c config) *MailboxClient {
+	return &MailboxClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mailbox.Hooks(f(g(h())))`.
+func (c *MailboxClient) Use(hooks ...Hook) {
+	c.hooks.Mailbox = append(c.hooks.Mailbox, hooks...)
+}
+
+// Create returns a create builder for Mailbox.
+func (c *MailboxClient) Create() *MailboxCreate {
+	mutation := newMailboxMutation(c.config, OpCreate)
+	return &MailboxCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Mailbox entities.
+func (c *MailboxClient) CreateBulk(builders ...*MailboxCreate) *MailboxCreateBulk {
+	return &MailboxCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Mailbox.
+func (c *MailboxClient) Update() *MailboxUpdate {
+	mutation := newMailboxMutation(c.config, OpUpdate)
+	return &MailboxUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MailboxClient) UpdateOne(m *Mailbox) *MailboxUpdateOne {
+	mutation := newMailboxMutation(c.config, OpUpdateOne, withMailbox(m))
+	return &MailboxUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MailboxClient) UpdateOneID(id int) *MailboxUpdateOne {
+	mutation := newMailboxMutation(c.config, OpUpdateOne, withMailboxID(id))
+	return &MailboxUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Mailbox.
+func (c *MailboxClient) Delete() *MailboxDelete {
+	mutation := newMailboxMutation(c.config, OpDelete)
+	return &MailboxDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a delete builder for the given entity.
+func (c *MailboxClient) DeleteOne(m *Mailbox) *MailboxDeleteOne {
+	return c.DeleteOneID(m.ID)
+}
+
+// DeleteOneID returns a delete builder for the given id.
+func (c *MailboxClient) DeleteOneID(id int) *MailboxDeleteOne {
+	builder := c.Delete().Where(mailbox.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MailboxDeleteOne{builder}
+}
+
+// Query returns a query builder for Mailbox.
+func (c *MailboxClient) Query() *MailboxQuery {
+	return &MailboxQuery{
+		config: c.config,
+	}
+}
+
+// Get returns a Mailbox entity by its id.
+func (c *MailboxClient) Get(ctx context.Context, id int) (*Mailbox, error) {
+	return c.Query().Where(mailbox.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MailboxClient) GetX(ctx context.Context, id int) *Mailbox {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAccount queries the account edge of a Mailbox.
+func (c *MailboxClient) QueryAccount(m *Mailbox) *AccountQuery {
+	query := &AccountQuery{config: c.config}
+	query.path = func(ctx context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mailbox.Table, mailbox.FieldID, id),
+			sqlgraph.To(account.Table, account.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, mailbox.AccountTable, mailbox.AccountColumn),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMessages queries the messages edge of a Mailbox.
+func (c *MailboxClient) QueryMessages(m *Mailbox) *MessageQuery {
+	query := &MessageQuery{config: c.config}
+	query.path = func(ctx context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mailbox.Table, mailbox.FieldID, id),
+			sqlgraph.To(message.Table, message.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, mailbox.MessagesTable, mailbox.MessagesColumn),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MailboxClient) Hooks() []Hook {
+	return c.hooks.Mailbox
 }
 
 // MessageClient is a client for the Message schema.
@@ -205,6 +448,22 @@ func (c *MessageClient) GetX(ctx context.Context, id int) *Message {
 		panic(err)
 	}
 	return obj
+}
+
+// QueryMailbox queries the mailbox edge of a Message.
+func (c *MessageClient) QueryMailbox(m *Message) *MailboxQuery {
+	query := &MailboxQuery{config: c.config}
+	query.path = func(ctx context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(message.Table, message.FieldID, id),
+			sqlgraph.To(mailbox.Table, mailbox.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, message.MailboxTable, message.MailboxColumn),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
 }
 
 // Hooks returns the client hooks.
